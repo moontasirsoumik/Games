@@ -1,16 +1,16 @@
 import pygame
 import math
 import random
-import colorsys  # Add this import
+import colorsys 
 
-# Initialize Pygame
+
 pygame.init()
 WIDTH, HEIGHT = 1200, 800
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 clock = pygame.time.Clock()
 FPS = 60
 
-# Fixed HSV to RGB conversion using colorsys
+
 def hsv_to_rgb(h, s, v):
     r, g, b = colorsys.hsv_to_rgb(h, s, v)
     return (int(r*255), int(g*255), int(b*255))
@@ -20,10 +20,9 @@ class Particle:
         self.pos = pygame.Vector2(random.randint(0, WIDTH), random.randint(0, HEIGHT))
         self.vel = pygame.Vector2()
         self.radius = 3
-        self.color = hsv_to_rgb(random.random(), 0.8, 0.8)  # Now using correct values
+        self.color = hsv_to_rgb(random.random(), 0.8, 0.8) 
 
     def update(self, ripples):
-        # Apply ripple forces
         for ripple in ripples:
             dist = self.pos.distance_to(ripple.pos)
             if dist < ripple.radius:
@@ -31,11 +30,9 @@ class Particle:
                 force = ripple.strength * (1 - dist/ripple.radius)
                 self.vel += pygame.Vector2(math.cos(angle), math.sin(angle)) * force
         
-        # Apply velocity and constraints
         self.pos += self.vel
-        self.vel *= 0.98  # Friction
+        self.vel *= 0.98  
         
-        # Keep particles on screen
         self.pos.x = max(0, min(WIDTH, self.pos.x))
         self.pos.y = max(0, min(HEIGHT, self.pos.y))
 
