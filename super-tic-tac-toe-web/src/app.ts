@@ -1,22 +1,31 @@
+import { pickAiMove, type Difficulty } from '@/ai';
 import { applyMove, createInitialState, isMoveLegal } from '@/game/rules';
-import type { GameMode, GameState, Move } from '@/game/types';
+import type { GameMode, GameState, Move, Player } from '@/game/types';
+import { hapticLight, hapticWin } from '@/fx/haptics';
+import { playBoardWin, playGameWin, playPlace } from '@/fx/sound';
+import { loadSettings, saveSettings } from '@/lib/settings';
 import {
   OnlineSession,
   clearSession,
   loadSession,
 } from '@/network/onlineSession';
 import type { ConnectionStatus } from '@/network/transport';
-import { renderApp, type AppViewModel, type ScreenId } from '@/ui/screens';
+import {
+  renderApp,
+  type AppViewModel,
+  type ScreenId,
+  type SheetId,
+} from '@/ui/screens';
 
 export function createApp(mount: HTMLElement) {
-  let screen: ScreenId = 'menu';
+  let screen: ScreenId = 'home';
+  let sheet: SheetId = null;
   let state: GameState = createInitialState('standard');
   let session: OnlineSession | null = null;
   let connectionStatus: ConnectionStatus | undefined;
   let statusDetail: string | undefined;
   let roomCode: string | undefined;
   let shareUrl: string | undefined;
-  let roleLabel: string | undefined;
   let toast: string | undefined;
   let waitingGuest = false;
   let localMode: GameMode = 'standard';
@@ -24,27 +33,63 @@ export function createApp(mount: HTMLElement) {
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let myPlayer: 0 | 1 | undefined;
   let isHost = false;
+  let soundOn = loadSettings().sound;
+  let aiThinking = false;
+  let lastMove: Move | undefined;
+  let cpuDifficulty: Difficulty = 'medium';
+  let cpuHumanPlayer: 0 | 1 = 0;
+  let showCelebration = false;
+  let aiBusy = false;
+  let prevMetaJson = JSON.stringify(createInitialState('standard').meta);
 
   const handlers = {
+    onOpenSheet: (id: SheetId) => {
+      sheet = id;
+      draw();
+    },
+    onCloseSheet: () => {
+      sheet = null;
+      draw();
+    },
     onModeChange: (mode: GameMode) => {
       onlineMode = mode;
       session?.setHostMode(mode);
-      if (!session && isHost) {
-        state = createInitialState(mode);
-      }
+      draw();
+    },
+    onToggleSound: () => {
+      soundOn = !soundOn;
+      saveSettings({ sound: soundOn });
       draw();
     },
     onPlayLocal: (mode: GameMode) => {
       localMode = mode;
       state = createInitialState(mode);
       myPlayer = undefined;
+      lastMove = undefined;
       screen = 'local';
+      sheet = null;
       draw();
+    },
+    onStartCpu: (opts: { mode: GameMode; difficulty: Difficulty; human: 0 | 1 }) => {
+      cpuDifficulty = opts.difficulty;
+      cpuHumanPlayer = opts.human;
+      localMode = opts.mode;
+      const starter: Player = 0;
+      state = createInitialState(opts.mode, starter);
+      myPlayer = opts.human;
+      lastMove = undefined;
+      screen = 'cpu-game';
+      sheet = null;
+      showCelebration = false;
+      prevMetaJson = JSON.stringify(state.meta);
+      draw();
+      void maybeAiTurn();
     },
     onPlayOnline: async (mode: GameMode) => {
       onlineMode = mode;
       screen = 'online-wait';
       waitingGuest = true;
+      sheet = null;
       draw();
       await startHost(mode);
     },
@@ -52,6 +97,7 @@ export function createApp(mount: HTMLElement) {
       screen = 'online-wait';
       waitingGuest = false;
       roomCode = code;
+      sheet = null;
       draw();
       await joinGuest(code);
     },
@@ -62,15 +108,33 @@ export function createApp(mount: HTMLElement) {
     onBackMenu: () => {
       session?.disconnect();
       session = null;
-      screen = 'menu';
+      screen = 'home';
+      sheet = null;
       connectionStatus = undefined;
+      aiThinking = false;
+      aiBusy = false;
       draw();
     },
     onCell: (move: Move) => {
       if (screen === 'local') {
         if (!isMoveLegal(state, move)) return;
+        hapticLight();
+        lastMove = move;
         state = applyMove(state, move);
+        onAfterMove();
         draw();
+        return;
+      }
+      if (screen === 'cpu-game') {
+        if (aiThinking || aiBusy) return;
+        const human = myPlayer ?? cpuHumanPlayer;
+        if (!isMoveLegal(state, move, human)) return;
+        hapticLight();
+        lastMove = move;
+        state = applyMove(state, move);
+        onAfterMove();
+        draw();
+        void maybeAiTurn();
         return;
       }
       if (session && screen === 'online-game') {
@@ -90,7 +154,7 @@ export function createApp(mount: HTMLElement) {
           await navigator.share({ title: 'Super Tic Tac Toe', url });
           return;
         } catch {
-          /* fallback */
+          /* empty */
         }
       }
       await copyText(url);
@@ -105,6 +169,7 @@ export function createApp(mount: HTMLElement) {
     },
     onRematch: () => {
       session?.rematch();
+      showCelebration = false;
     },
     onRestart: () => {
       if (session) {
@@ -113,6 +178,12 @@ export function createApp(mount: HTMLElement) {
       }
       if (screen === 'online-game') {
         void startHost(onlineMode);
+      } else if (screen === 'cpu-game') {
+        handlers.onStartCpu({
+          mode: localMode,
+          difficulty: cpuDifficulty,
+          human: cpuHumanPlayer,
+        });
       } else {
         state = createInitialState(localMode);
         draw();
@@ -124,6 +195,46 @@ export function createApp(mount: HTMLElement) {
       else if (persist?.roomCode) void joinGuest(persist.roomCode);
     },
   };
+
+  function onAfterMove() {
+    const metaJson = JSON.stringify(state.meta);
+    if (metaJson !== prevMetaJson) playBoardWin();
+    prevMetaJson = metaJson;
+    playPlace(state.currentPlayer === 0 ? 1 : 0);
+    if (state.outcome !== 'ongoing') {
+      hapticWin();
+      playGameWin();
+      showCelebration = true;
+    }
+  }
+
+  async function maybeAiTurn() {
+    if (screen !== 'cpu-game' || state.outcome !== 'ongoing') return;
+    const human = myPlayer ?? cpuHumanPlayer;
+    const ai = (1 - human) as Player;
+    if (state.currentPlayer !== ai) return;
+    if (aiBusy) return;
+    aiBusy = true;
+    aiThinking = true;
+    draw();
+    try {
+      const move = await pickAiMove({ state, aiPlayer: ai, difficulty: cpuDifficulty });
+      if (screen !== 'cpu-game' || state.outcome !== 'ongoing' || state.currentPlayer !== ai) return;
+      if (!isMoveLegal(state, move, ai)) return;
+      lastMove = move;
+      state = applyMove(state, move);
+      onAfterMove();
+    } catch {
+      showToast('CPU skipped a turn');
+    } finally {
+      aiThinking = false;
+      aiBusy = false;
+      draw();
+      if (state.outcome === 'ongoing' && state.currentPlayer === ai) {
+        void maybeAiTurn();
+      }
+    }
+  }
 
   function showToast(msg: string) {
     toast = msg;
@@ -138,18 +249,24 @@ export function createApp(mount: HTMLElement) {
   function vm(): AppViewModel {
     return {
       screen,
+      sheet,
       state,
       connectionStatus,
       statusDetail,
       roomCode,
       shareUrl,
-      roleLabel,
       toast,
       localMode,
       onlineMode,
       waitingGuest,
       myPlayer,
       isHost,
+      soundOn,
+      aiThinking,
+      lastMove,
+      cpuDifficulty,
+      cpuHumanPlayer,
+      showCelebration,
     };
   }
 
@@ -172,7 +289,6 @@ export function createApp(mount: HTMLElement) {
       shareUrl = session.shareUrl();
       onlineMode = mode;
       state = session.getState();
-      roleLabel = 'You: X (host)';
       myPlayer = 0;
       isHost = true;
       connectionStatus = 'connected';
@@ -192,7 +308,6 @@ export function createApp(mount: HTMLElement) {
       session = await OnlineSession.joinGuest(code, sessionCallbacks());
       exposeE2E(session);
       roomCode = code;
-      roleLabel = 'You: O (guest)';
       myPlayer = 1;
       isHost = false;
       screen = 'online-wait';
@@ -234,7 +349,7 @@ export function createApp(mount: HTMLElement) {
       onRoomFull: () => {
         showToast('Room full');
         session?.disconnect();
-        screen = 'menu';
+        screen = 'home';
         draw();
       },
     };
@@ -254,11 +369,11 @@ export function createApp(mount: HTMLElement) {
         exposeE2E(session);
         roomCode = persist.roomCode;
         shareUrl = session.shareUrl();
-        roleLabel = persist.role === 'host' ? 'You: X (host)' : 'You: O (guest)';
         myPlayer = persist.player;
         isHost = persist.role === 'host';
         state = session.getState();
-        screen = persist.role === 'host' && !persist.stateJson ? 'online-wait' : 'online-game';
+        screen =
+          persist.role === 'host' && !persist.stateJson ? 'online-wait' : 'online-game';
         draw();
       } catch {
         clearSession();

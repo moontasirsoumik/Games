@@ -9,6 +9,7 @@ async function clickCell(page: Page, board: number, row: number, col: number) {
 
 async function hostCreatesRoom(page: Page) {
   await page.goto('./?e2e=1');
+  await page.getByRole('button', { name: 'Play Online' }).click();
   await page.getByRole('button', { name: 'New online game' }).click();
   await expect(page.getByTestId('room-code')).toBeVisible({ timeout: 60_000 });
   const codeText = await page.getByTestId('room-code').textContent();
@@ -19,6 +20,7 @@ async function hostCreatesRoom(page: Page) {
 
 async function guestJoins(page: Page, code: string) {
   await page.goto('./?e2e=1');
+  await page.getByRole('button', { name: 'Play Online' }).click();
   await page.getByPlaceholder('Room code').fill(code);
   await page.getByRole('button', { name: 'Join' }).click();
 }

@@ -1,16 +1,23 @@
 import { cellToTargetBoardIndex, isBoardFinished, isMoveLegal } from '@/game/rules';
 import type { GameState, Move } from '@/game/types';
 
+function prefersReducedMotion(): boolean {
+  return typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 export function boardGridEl(
   state: GameState,
   onCellTap: (move: Move) => void,
   interactive: boolean,
   perspectivePlayer?: 0 | 1,
+  lastMove?: Move,
 ): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'mega-board';
   wrap.setAttribute('role', 'grid');
   wrap.setAttribute('aria-label', 'Super tic-tac-toe board');
+
+  const reduced = prefersReducedMotion();
 
   for (let mb = 0; mb < 9; mb++) {
     const mini = document.createElement('div');
@@ -47,12 +54,18 @@ export function boardGridEl(
         const val = state.boards[mb][r][c];
         if (val === 0) {
           cell.classList.add('mark-x');
-          cell.setAttribute('aria-label', `X at board ${mb + 1} row ${r + 1} col ${c + 1}`);
         } else if (val === 1) {
           cell.classList.add('mark-o');
-          cell.setAttribute('aria-label', `O at board ${mb + 1} row ${r + 1} col ${c + 1}`);
-        } else {
-          cell.setAttribute('aria-label', `Empty board ${mb + 1} row ${r + 1} col ${c + 1}`);
+        }
+
+        if (
+          lastMove &&
+          lastMove.board === mb &&
+          lastMove.row === r &&
+          lastMove.col === c &&
+          !reduced
+        ) {
+          cell.classList.add('cell-pop');
         }
 
         const move: Move = { board: mb, row: r, col: c };
@@ -81,11 +94,10 @@ export function boardGridEl(
 }
 
 export function activeBoardHint(state: GameState): string {
-  if (state.mode === 'free') return 'Free play — any board';
+  if (state.mode === 'free') return 'Free play';
   if (state.outcome !== 'ongoing') return '';
-  if (state.activeBoard === null) return 'Play on any open board';
-  const n = state.activeBoard + 1;
-  return `Active: board ${n}`;
+  if (state.activeBoard === null) return 'Any open board';
+  return `Board ${state.activeBoard + 1}`;
 }
 
 export function moveTargetBoard(move: Move): number {
