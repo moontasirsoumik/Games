@@ -106,7 +106,10 @@ function logoBlock(): HTMLElement {
 function homeScreen(vm: AppViewModel, h: AppHandlers): HTMLElement {
   const shell = document.createElement('div');
   shell.className = 'screen home-screen';
-  shell.appendChild(logoBlock());
+  const hero = document.createElement('div');
+  hero.className = 'home-hero';
+  hero.appendChild(logoBlock());
+  shell.appendChild(hero);
 
   const actions = document.createElement('div');
   actions.className = 'home-actions';
@@ -331,27 +334,30 @@ function playerCard(label: string, player: 0 | 1, vm: AppViewModel): HTMLElement
 function gameScreen(vm: AppViewModel, h: AppHandlers): HTMLElement {
   const shell = document.createElement('div');
   shell.className = 'screen game-screen';
-  shell.appendChild(playerBar(vm));
 
-  const meta = document.createElement('div');
-  meta.className = 'game-meta';
+  const top = document.createElement('header');
+  top.className = 'game-top';
+  top.appendChild(playerBar(vm));
+
+  const banner = document.createElement('div');
+  banner.className = 'status-banner';
   const hint = document.createElement('span');
   hint.dataset.testid = 'board-hint';
   hint.textContent = activeBoardHint(vm.state);
-  meta.appendChild(hint);
+  banner.appendChild(hint);
   if (vm.connectionStatus) {
     const dot = document.createElement('span');
     dot.className = 'conn-dot';
     dot.dataset.status = vm.connectionStatus;
-    meta.appendChild(dot);
+    banner.appendChild(dot);
   }
-  shell.appendChild(meta);
+  top.appendChild(banner);
+  shell.appendChild(top);
 
   const boardHost = document.createElement('div');
   boardHost.className = 'board-host';
   boardHost.dataset.testid = 'game-board';
-  const interactive =
-    vm.state.outcome === 'ongoing' && !vm.aiThinking;
+  const interactive = vm.state.outcome === 'ongoing' && !vm.aiThinking;
   const perspective =
     vm.screen === 'online-game'
       ? vm.myPlayer
@@ -363,7 +369,12 @@ function gameScreen(vm: AppViewModel, h: AppHandlers): HTMLElement {
   );
   shell.appendChild(boardHost);
 
-  shell.appendChild(iconBtn('Home', h.onBackMenu, 'btn-menu'));
+  const dock = document.createElement('nav');
+  dock.className = 'game-dock';
+  dock.setAttribute('aria-label', 'Game actions');
+  dock.appendChild(actionBtn('Restart', 'secondary', h.onRestart, 'btn-restart'));
+  dock.appendChild(actionBtn('Home', 'secondary', h.onBackMenu, 'btn-menu'));
+  shell.appendChild(dock);
   return shell;
 }
 
