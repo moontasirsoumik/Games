@@ -1,0 +1,67 @@
+name: Deploy Super Tic Tac Toe Web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'super-tic-tac-toe-web/**'
+      - '.github/workflows/deploy-super-tic-tac-toe-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages-super-tic-tac-toe'
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: super-tic-tac-toe-web/package-lock.json
+
+      - name: Install
+        working-directory: super-tic-tac-toe-web
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Unit tests
+        working-directory: super-tic-tac-toe-web
+        run: npm test
+
+      - name: Build
+        working-directory: super-tic-tac-toe-web
+        env:
+          VITE_BASE_PATH: /Games/super-tic-tac-toe-web/
+        run: npm run build
+
+      - name: Prepare Pages bundle (subpath only)
+        working-directory: super-tic-tac-toe-web
+        run: |
+          mkdir -p ../pages-bundle/super-tic-tac-toe-web
+          cp -r dist/* ../pages-bundle/super-tic-tac-toe-web/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages-bundle
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

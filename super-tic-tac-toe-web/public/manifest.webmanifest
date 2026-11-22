@@ -1,0 +1,25 @@
+{
+  "name": "Super Tic Tac Toe",
+  "short_name": "Super TTT",
+  "description": "Ultimate tic-tac-toe — play online or pass-and-play",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1a1a",
+  "theme_color": "#dda0dd",
+  "icons": [
+    {
+      "src": "icons/cross.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/circle.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
